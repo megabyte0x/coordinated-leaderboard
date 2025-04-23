@@ -1,6 +1,8 @@
 use dotenv::dotenv;
 use sqlx::postgres::{PgPool, PgPoolOptions};
+use std::sync::Arc;
 use teloxide::{prelude::*, utils::command::BotCommands};
+use tokio::time::{Duration, interval};
 
 #[tokio::main]
 async fn main() -> Result<(), sqlx::Error> {
@@ -10,7 +12,28 @@ async fn main() -> Result<(), sqlx::Error> {
     log::info!("Starting command bot...");
 
     let bot = Bot::from_env();
-    Command::repl(bot, answer).await;
+    let bot_clone = bot.clone();
+
+    // Create database connection pool
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&std::env::var("DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+
+    let pool_arc = Arc::new(pool);
+    let pool_clone = Arc::clone(&pool_arc);
+
+    // Start the leaderboard scheduler in a separate task
+    tokio::spawn(async move {
+        run_leaderboard_scheduler(bot_clone, pool_clone).await;
+    });
+
+    // Handle user commands
+    Command::repl(bot, move |bot, msg, cmd| {
+        answer(bot, msg, cmd, Arc::clone(&pool_arc))
+    })
+    .await;
 
     Ok(())
 }
@@ -33,12 +56,7 @@ enum Command {
     Register { handle: String },
 }
 
-async fn answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> {
-    let pool = PgPoolOptions::new()
-        .max_connections(1)
-        .connect(&std::env::var("DATABASE_URL").unwrap())
-        .await
-        .unwrap();
+async fn answer(bot: Bot, msg: Message, cmd: Command, pool: Arc<PgPool>) -> ResponseResult<()> {
     match cmd {
         Command::Start => bot.send_message(msg.chat.id, "Hello, world!").await?,
         Command::Help => {
@@ -76,6 +94,29 @@ async fn answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> {
     };
 
     Ok(())
+}
+
+// Scheduler function to send leaderboard periodically
+async fn run_leaderboard_scheduler(bot: Bot, pool: Arc<PgPool>) {
+    let target_chat_id = ChatId(std::env::var("GC_CHAT_ID").unwrap().parse::<i64>().unwrap());
+
+    // Create an interval that fires every 10 seconds
+    let mut interval = interval(Duration::from_secs(86400));
+
+    loop {
+        // Wait until the next tick
+        interval.tick().await;
+
+        // Get the current leaderboard
+        let leaderboard = get_leaderboard(&pool).await;
+
+        // Send the leaderboard message
+        if let Err(e) = bot.send_message(target_chat_id, leaderboard).await {
+            log::error!("Failed to send scheduled leaderboard: {:?}", e);
+        } else {
+            log::info!("Sent scheduled leaderboard");
+        }
+    }
 }
 
 async fn format_leaderboard(recs: Vec<LeaderBoard>) -> String {
