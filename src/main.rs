@@ -1,8 +1,13 @@
 use dotenv::dotenv;
+use once_cell::sync::Lazy;
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::sync::Arc;
+use std::sync::Mutex;
 use teloxide::{prelude::*, utils::command::BotCommands};
 use tokio::time::{Duration, interval};
+
+// Global variable for chat ID
+static GC_CHAT_ID: Lazy<Mutex<Option<ChatId>>> = Lazy::new(|| Mutex::new(None));
 
 #[tokio::main]
 async fn main() -> Result<(), sqlx::Error> {
@@ -12,7 +17,6 @@ async fn main() -> Result<(), sqlx::Error> {
     log::info!("Starting command bot...");
 
     let bot = Bot::from_env();
-    let bot_clone = bot.clone();
 
     // Create database connection pool
     let pool = PgPoolOptions::new()
@@ -22,12 +26,8 @@ async fn main() -> Result<(), sqlx::Error> {
         .unwrap();
 
     let pool_arc = Arc::new(pool);
-    let pool_clone = Arc::clone(&pool_arc);
 
     // Start the leaderboard scheduler in a separate task
-    tokio::spawn(async move {
-        run_leaderboard_scheduler(bot_clone, pool_clone).await;
-    });
 
     // Handle user commands
     Command::repl(bot, move |bot, msg, cmd| {
@@ -58,7 +58,24 @@ enum Command {
 
 async fn answer(bot: Bot, msg: Message, cmd: Command, pool: Arc<PgPool>) -> ResponseResult<()> {
     match cmd {
-        Command::Start => bot.send_message(msg.chat.id, "Hello, world!").await?,
+        Command::Start => {
+            // Update the global chat ID
+            let chat_id = msg.chat.id;
+            {
+                let mut gc_chat_id = GC_CHAT_ID.lock().unwrap();
+                *gc_chat_id = Some(chat_id);
+            }
+
+            let bot_clone = bot.clone();
+            let pool_clone = pool.clone();
+
+            tokio::spawn(async move {
+                run_leaderboard_scheduler(bot_clone, pool_clone).await;
+            });
+
+            bot.send_message(msg.chat.id, "Hello, world! Chat ID has been saved.")
+                .await?
+        }
         Command::Help => {
             bot.send_message(msg.chat.id, Command::descriptions().to_string())
                 .await?
@@ -98,10 +115,9 @@ async fn answer(bot: Bot, msg: Message, cmd: Command, pool: Arc<PgPool>) -> Resp
 
 // Scheduler function to send leaderboard periodically
 async fn run_leaderboard_scheduler(bot: Bot, pool: Arc<PgPool>) {
-    let target_chat_id = ChatId(std::env::var("GC_CHAT_ID").unwrap().parse::<i64>().unwrap());
-
-    // Create an interval that fires every 10 seconds
+    // Create an interval that fires every day
     let mut interval = interval(Duration::from_secs(86400));
+    let target_chat_id = GC_CHAT_ID.lock().unwrap().unwrap();
 
     loop {
         // Wait until the next tick
@@ -132,7 +148,7 @@ async fn format_leaderboard(recs: Vec<LeaderBoard>) -> String {
 
 async fn get_leaderboard(pool: &PgPool) -> String {
     let recs = sqlx::query_as::<_, LeaderBoard>(
-        "SELECT telegram_username, xp FROM leaderboard ORDER BY xp DESC LIMIT 5",
+        "SELECT telegram_username, xp FROM leaderboard ORDER BY xp DESC",
     )
     .fetch_all(pool)
     .await
