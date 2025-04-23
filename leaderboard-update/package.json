@@ -1,0 +1,14 @@
+{
+    "name": "supabase-leaderboard",
+    "version": "1.0.0",
+    "description": "Supabase integration for the coordinated leaderboard",
+    "main": "index.js",
+    "type": "module",
+    "scripts": {
+        "start": "node index.js"
+    },
+    "dependencies": {
+        "@supabase/supabase-js": "^2.36.0",
+        "dotenv": "^16.3.1"
+    }
+}
