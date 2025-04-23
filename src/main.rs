@@ -1,6 +1,5 @@
 use dotenv::dotenv;
-use sqlx::postgres::PgPool;
-use sqlx::postgres::PgPoolOptions;
+use sqlx::postgres::{PgPool, PgPoolOptions};
 use teloxide::{prelude::*, utils::command::BotCommands};
 
 #[tokio::main]
@@ -20,6 +19,9 @@ async fn main() -> Result<(), sqlx::Error> {
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase")]
 enum Command {
+    /// Say hello
+    #[command(alias = "start")]
+    Start,
     /// Display this text.
     #[command(aliases = ["h", "?"])]
     Help,
@@ -38,6 +40,7 @@ async fn answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> {
         .await
         .unwrap();
     match cmd {
+        Command::Start => bot.send_message(msg.chat.id, "Hello, world!").await?,
         Command::Help => {
             bot.send_message(msg.chat.id, Command::descriptions().to_string())
                 .await?
