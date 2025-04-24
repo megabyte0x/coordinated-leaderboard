@@ -51,9 +51,6 @@ enum Command {
     /// Show the leaderboard.
     #[command(alias = "lb")]
     Leaderboard,
-    /// Register with your x-handle. Example: /register username
-    #[command(alias = "r")]
-    Register { handle: String },
 }
 
 async fn answer(bot: Bot, msg: Message, cmd: Command, pool: Arc<PgPool>) -> ResponseResult<()> {
@@ -84,29 +81,6 @@ async fn answer(bot: Bot, msg: Message, cmd: Command, pool: Arc<PgPool>) -> Resp
             let leaderboard = get_leaderboard(&pool).await;
 
             bot.send_message(msg.chat.id, leaderboard).await?
-        }
-        Command::Register { handle } => {
-            let username = msg.from.unwrap().username;
-
-            match username {
-                Some(username) => {
-                    if handle.is_empty() {
-                        bot.send_message(msg.chat.id, "Please provide your X Handle")
-                            .await?
-                    } else {
-                        register_user(&pool, username, &handle).await.unwrap();
-                        bot.send_message(
-                            msg.chat.id,
-                            format!("Registered with X Handle {}.", handle),
-                        )
-                        .await?
-                    }
-                }
-                None => {
-                    bot.send_message(msg.chat.id, format!("Something went wrong"))
-                        .await?
-                }
-            }
         }
     };
 
@@ -155,25 +129,6 @@ async fn get_leaderboard(pool: &PgPool) -> String {
     .unwrap();
 
     format_leaderboard(recs).await
-}
-
-async fn register_user(
-    pool: &PgPool,
-    tg_username: String,
-    x_handle: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "INSERT INTO leaderboard (telegram_username, x_handle, xp) 
-         VALUES ($1, $2, 0) 
-         ON CONFLICT (telegram_username) DO UPDATE 
-         SET x_handle = $2",
-    )
-    .bind(tg_username)
-    .bind(x_handle)
-    .execute(pool)
-    .await?;
-
-    Ok(())
 }
 
 #[derive(sqlx::FromRow)]
