@@ -5,12 +5,13 @@ This is a Telegram bot that allows you to track the leaderboard of the Coordinat
 ## Setup
 
 1. Clone the repository
-2. Create a `.env` file
-3. Add the following variables:
+2. `cd bot`
+3. Create a `.env` file
+4. Add the following variables:
     - `TELOXIDE_TOKEN`: The token for the Telegram bot
     - `DATABASE_URL`: The URL for the database
-4. Run `cargo run`
-5. Chat with the bot on Telegram: `@elcoordinator_bot`
+5. Run `cargo run`
+6. Chat with the bot on Telegram: `@<YOUR_BOT_USERNAME>`
 
 ## Commands
 
